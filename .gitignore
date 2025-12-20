@@ -1,0 +1,15 @@
+# Ignore raw data folder (DVC will track the dataset)
+data/
+!data/*.dvc
+
+# Python
+__pycache__/
+*.py[cod]
+
+# DVC cache/temporary files
+.dvc/cache/
+.dvc/tmp/
+
+# Common artifacts
+*.pkl
+*.joblib
