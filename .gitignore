@@ -1,6 +1,6 @@
-# Ignore raw data folder (DVC will track the dataset)
-data/
-!data/*.dvc
+# # Ignore raw data folder (DVC will track the dataset)
+# data/
+# !data/*.dvc
 
 # Python
 __pycache__/
