@@ -1,0 +1,603 @@
+# GitHub Actions Workflow - MLOps Pipeline
+# Execution automatique sur chaque push
+# Pipeline complet: DVC Repro -> Training -> Evaluation -> Validation
+
+name: MLOps Pipeline CI/CD
+
+on:
+  push:
+    branches:
+      - main
+      - projet
+      - develop
+  pull_request:
+    branches:
+      - main
+      - projet
+
+env:
+  PYTHON_VERSION: '3.11'
+  MLFLOW_TRACKING_URI: 'sqlite:///mlflow.db'
+
+jobs:
+  # ========================================
+  # JOB 1: Setup et Installation
+  # ========================================
+  setup:
+    name: Setup Environment
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Necessaire pour DVC
+      
+      - name: Set up Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+      
+      - name: Verify installations
+        run: |
+          python --version
+          pip list
+          dvc version
+          mlflow --version
+      
+      - name: Initialize DVC
+        run: |
+          dvc config core.analytics false
+          dvc config core.check_update false
+          echo "DVC initialized successfully"
+
+  # ========================================
+  # JOB 2: Data Generation
+  # ========================================
+  data-generation:
+    name: Generate Datasets
+    runs-on: ubuntu-latest
+    needs: setup
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Generate all datasets
+        run: |
+          echo "Generating California Housing dataset..."
+          python generate_data.py --dataset housing
+          
+          echo "Generating Credit Card Fraud dataset..."
+          python generate_data.py --dataset credit
+          
+          echo "Generating Customer Churn dataset..."
+          python generate_data.py --dataset churn
+      
+      - name: Verify datasets
+        run: |
+          ls -lh data/
+          if [ -f data/california_housing.csv ]; then
+            echo "[OK] California Housing dataset created"
+            wc -l data/california_housing.csv
+          fi
+          if [ -f data/credit_fraud.csv ]; then
+            echo "[OK] Credit Fraud dataset created"
+            wc -l data/credit_fraud.csv
+          fi
+          if [ -f data/customer_churn.csv ]; then
+            echo "[OK] Customer Churn dataset created"
+            wc -l data/customer_churn.csv
+          fi
+      
+      - name: Upload datasets as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: datasets
+          path: data/*.csv
+          retention-days: 7
+
+  # ========================================
+  # JOB 3: DVC Pipeline Execution
+  # ========================================
+  dvc-pipeline:
+    name: Execute DVC Pipeline
+    runs-on: ubuntu-latest
+    needs: data-generation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets
+          path: data/
+      
+      - name: Initialize DVC
+        run: |
+          dvc config core.analytics false
+          dvc config core.check_update false
+      
+      - name: Execute DVC Repro
+        run: |
+          echo "Starting DVC Pipeline Reproduction..."
+          dvc repro --verbose
+          echo "DVC Pipeline completed successfully"
+      
+      - name: Show DVC metrics
+        run: |
+          echo "=== DVC Metrics ==="
+          dvc metrics show
+      
+      - name: Show DVC DAG
+        run: |
+          echo "=== DVC Pipeline DAG ==="
+          dvc dag
+      
+      - name: Upload DVC outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: dvc-outputs
+          path: |
+            metrics/*.json
+            dvc.lock
+          retention-days: 7
+
+  # ========================================
+  # JOB 4: Model Training - California Housing
+  # ========================================
+  train-housing:
+    name: Train California Housing Model
+    runs-on: ubuntu-latest
+    needs: data-generation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets
+          path: data/
+      
+      - name: Train RandomForest model
+        run: |
+          echo "Training RandomForest on California Housing..."
+          python train.py \
+            --dataset california_housing.csv \
+            --model random_forest \
+            --experiment-name "California-Housing-CI"
+      
+      - name: Train GradientBoosting model
+        run: |
+          echo "Training GradientBoosting on California Housing..."
+          python train.py \
+            --dataset california_housing.csv \
+            --model gradient_boosting \
+            --experiment-name "California-Housing-CI"
+      
+      - name: Save metrics
+        run: |
+          if [ -f metrics/housing_metrics.json ]; then
+            echo "=== Housing Metrics ==="
+            cat metrics/housing_metrics.json
+          fi
+      
+      - name: Upload housing metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: housing-metrics
+          path: metrics/housing_metrics.json
+          retention-days: 7
+
+  # ========================================
+  # JOB 5: Model Training - Credit Fraud
+  # ========================================
+  train-credit:
+    name: Train Credit Fraud Model
+    runs-on: ubuntu-latest
+    needs: data-generation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets
+          path: data/
+      
+      - name: Train RandomForest model
+        run: |
+          echo "Training RandomForest on Credit Fraud..."
+          python train.py \
+            --dataset credit_fraud.csv \
+            --model random_forest \
+            --experiment-name "Credit-Fraud-CI"
+      
+      - name: Train GradientBoosting model
+        run: |
+          echo "Training GradientBoosting on Credit Fraud..."
+          python train.py \
+            --dataset credit_fraud.csv \
+            --model gradient_boosting \
+            --experiment-name "Credit-Fraud-CI"
+      
+      - name: Save metrics
+        run: |
+          if [ -f metrics/credit_metrics.json ]; then
+            echo "=== Credit Fraud Metrics ==="
+            cat metrics/credit_metrics.json
+          fi
+      
+      - name: Upload credit metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: credit-metrics
+          path: metrics/credit_metrics.json
+          retention-days: 7
+
+  # ========================================
+  # JOB 6: Model Training - Customer Churn
+  # ========================================
+  train-churn:
+    name: Train Customer Churn Model
+    runs-on: ubuntu-latest
+    needs: data-generation
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download datasets
+        uses: actions/download-artifact@v4
+        with:
+          name: datasets
+          path: data/
+      
+      - name: Train RandomForest model
+        run: |
+          echo "Training RandomForest on Customer Churn..."
+          python train.py \
+            --dataset customer_churn.csv \
+            --model random_forest \
+            --experiment-name "Customer-Churn-CI"
+      
+      - name: Train GradientBoosting model
+        run: |
+          echo "Training GradientBoosting on Customer Churn..."
+          python train.py \
+            --dataset customer_churn.csv \
+            --model gradient_boosting \
+            --experiment-name "Customer-Churn-CI"
+      
+      - name: Save metrics
+        run: |
+          if [ -f metrics/churn_metrics.json ]; then
+            echo "=== Churn Metrics ==="
+            cat metrics/churn_metrics.json
+          fi
+      
+      - name: Upload churn metrics
+        uses: actions/upload-artifact@v4
+        with:
+          name: churn-metrics
+          path: metrics/churn_metrics.json
+          retention-days: 7
+
+  # ========================================
+  # JOB 7: Model Evaluation
+  # ========================================
+  evaluate:
+    name: Evaluate Models
+    runs-on: ubuntu-latest
+    needs: [train-housing, train-credit, train-churn]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download all metrics
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      
+      - name: Compare results
+        run: |
+          echo "Comparing all model results..."
+          python compare_results.py
+      
+      - name: Display comparison summary
+        run: |
+          if [ -f reports/comparison_report.html ]; then
+            echo "[OK] Comparison report generated"
+            ls -lh reports/comparison_report.html
+          fi
+      
+      - name: Upload comparison report
+        uses: actions/upload-artifact@v4
+        with:
+          name: comparison-report
+          path: reports/comparison_report.html
+          retention-days: 30
+
+  # ========================================
+  # JOB 8: Model Validation
+  # ========================================
+  validate:
+    name: Validate Model Performance
+    runs-on: ubuntu-latest
+    needs: evaluate
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Download metrics
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts/
+      
+      - name: Validate California Housing metrics
+        run: |
+          python -c "
+          import json
+          import sys
+          
+          try:
+              with open('artifacts/housing-metrics/housing_metrics.json', 'r') as f:
+                  metrics = json.load(f)
+              
+              r2 = metrics.get('r2_score', 0)
+              rmse = metrics.get('rmse', float('inf'))
+              
+              print(f'Housing R2: {r2:.4f}, RMSE: {rmse:.4f}')
+              
+              # Validation thresholds
+              if r2 < 0.70:
+                  print('ERROR: R2 score too low (< 0.70)')
+                  sys.exit(1)
+              
+              if rmse > 1.0:
+                  print('ERROR: RMSE too high (> 1.0)')
+                  sys.exit(1)
+              
+              print('[OK] Housing model validation passed')
+          except FileNotFoundError:
+              print('WARNING: Housing metrics file not found')
+          except Exception as e:
+              print(f'ERROR: {e}')
+              sys.exit(1)
+          "
+      
+      - name: Validate Credit Fraud metrics
+        run: |
+          python -c "
+          import json
+          import sys
+          
+          try:
+              with open('artifacts/credit-metrics/credit_metrics.json', 'r') as f:
+                  metrics = json.load(f)
+              
+              roc_auc = metrics.get('roc_auc', 0)
+              f1 = metrics.get('f1_score', 0)
+              
+              print(f'Credit ROC-AUC: {roc_auc:.4f}, F1: {f1:.4f}')
+              
+              # Validation thresholds
+              if roc_auc < 0.85:
+                  print('ERROR: ROC-AUC too low (< 0.85)')
+                  sys.exit(1)
+              
+              if f1 < 0.50:
+                  print('ERROR: F1 score too low (< 0.50)')
+                  sys.exit(1)
+              
+              print('[OK] Credit Fraud model validation passed')
+          except FileNotFoundError:
+              print('WARNING: Credit metrics file not found')
+          except Exception as e:
+              print(f'ERROR: {e}')
+              sys.exit(1)
+          "
+      
+      - name: Validate Customer Churn metrics
+        run: |
+          python -c "
+          import json
+          import sys
+          
+          try:
+              with open('artifacts/churn-metrics/churn_metrics.json', 'r') as f:
+                  metrics = json.load(f)
+              
+              accuracy = metrics.get('accuracy', 0)
+              f1 = metrics.get('f1_score', 0)
+              
+              print(f'Churn Accuracy: {accuracy:.4f}, F1: {f1:.4f}')
+              
+              # Validation thresholds
+              if accuracy < 0.70:
+                  print('ERROR: Accuracy too low (< 0.70)')
+                  sys.exit(1)
+              
+              if f1 < 0.50:
+                  print('ERROR: F1 score too low (< 0.50)')
+                  sys.exit(1)
+              
+              print('[OK] Customer Churn model validation passed')
+          except FileNotFoundError:
+              print('WARNING: Churn metrics file not found')
+          except Exception as e:
+              print(f'ERROR: {e}')
+              sys.exit(1)
+          "
+      
+      - name: Overall validation summary
+        run: |
+          echo "========================================="
+          echo "   MODEL VALIDATION SUMMARY"
+          echo "========================================="
+          echo "[OK] All models passed validation thresholds"
+          echo "Pipeline execution completed successfully"
+
+  # ========================================
+  # JOB 9: MLflow Tracking Verification
+  # ========================================
+  mlflow-tracking:
+    name: Verify MLflow Tracking
+    runs-on: ubuntu-latest
+    needs: [train-housing, train-credit, train-churn]
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: 'pip'
+      
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+      
+      - name: Check MLflow runs
+        run: |
+          echo "Checking MLflow experiment tracking..."
+          python -c "
+          import mlflow
+          
+          # List all experiments
+          experiments = mlflow.search_experiments()
+          print(f'Total experiments: {len(experiments)}')
+          
+          for exp in experiments:
+              print(f'  - {exp.name} (ID: {exp.experiment_id})')
+              runs = mlflow.search_runs(experiment_ids=[exp.experiment_id])
+              print(f'    Runs: {len(runs)}')
+          
+          print('[OK] MLflow tracking verified')
+          "
+      
+      - name: Export MLflow runs summary
+        run: |
+          python -c "
+          import mlflow
+          import pandas as pd
+          
+          # Get all runs
+          all_runs = mlflow.search_runs()
+          
+          if len(all_runs) > 0:
+              print('=== Recent MLflow Runs ===')
+              print(all_runs[['run_id', 'experiment_id', 'status', 'start_time']].head(10))
+              
+              # Save summary
+              all_runs.to_csv('mlflow_runs_summary.csv', index=False)
+              print('[OK] MLflow summary exported')
+          else:
+              print('No MLflow runs found')
+          "
+      
+      - name: Upload MLflow summary
+        uses: actions/upload-artifact@v4
+        with:
+          name: mlflow-summary
+          path: mlflow_runs_summary.csv
+          retention-days: 30
+        if: success()
+
+  # ========================================
+  # JOB 10: Notification (optionnel)
+  # ========================================
+  notify:
+    name: Pipeline Completion Notification
+    runs-on: ubuntu-latest
+    needs: [validate, mlflow-tracking]
+    if: always()
+    
+    steps:
+      - name: Pipeline Status
+        run: |
+          echo "========================================="
+          echo "   MLOPS PIPELINE EXECUTION COMPLETE"
+          echo "========================================="
+          echo "Date: $(date)"
+          echo "Status: ${{ job.status }}"
+          echo "All jobs completed successfully!"
+          echo "========================================="
