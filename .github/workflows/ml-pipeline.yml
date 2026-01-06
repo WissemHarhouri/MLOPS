@@ -200,17 +200,15 @@ jobs:
         run: |
           echo "Training RandomForest on California Housing..."
           python train.py \
-            --dataset california_housing.csv \
-            --model random_forest \
-            --experiment-name "California-Housing-CI"
+            --dataset california_housing \
+            --model random_forest
       
       - name: Train GradientBoosting model
         run: |
           echo "Training GradientBoosting on California Housing..."
           python train.py \
-            --dataset california_housing.csv \
-            --model gradient_boosting \
-            --experiment-name "California-Housing-CI"
+            --dataset california_housing \
+            --model gradient_boosting
       
       - name: Save metrics
         run: |
@@ -257,17 +255,15 @@ jobs:
         run: |
           echo "Training RandomForest on Credit Fraud..."
           python train.py \
-            --dataset credit_fraud.csv \
-            --model random_forest \
-            --experiment-name "Credit-Fraud-CI"
+            --dataset credit_fraud \
+            --model random_forest
       
       - name: Train GradientBoosting model
         run: |
           echo "Training GradientBoosting on Credit Fraud..."
           python train.py \
-            --dataset credit_fraud.csv \
-            --model gradient_boosting \
-            --experiment-name "Credit-Fraud-CI"
+            --dataset credit_fraud \
+            --model gradient_boosting
       
       - name: Save metrics
         run: |
@@ -314,17 +310,15 @@ jobs:
         run: |
           echo "Training RandomForest on Customer Churn..."
           python train.py \
-            --dataset customer_churn.csv \
-            --model random_forest \
-            --experiment-name "Customer-Churn-CI"
+            --dataset customer_churn \
+            --model random_forest
       
       - name: Train GradientBoosting model
         run: |
           echo "Training GradientBoosting on Customer Churn..."
           python train.py \
-            --dataset customer_churn.csv \
-            --model gradient_boosting \
-            --experiment-name "Customer-Churn-CI"
+            --dataset customer_churn \
+            --model gradient_boosting
       
       - name: Save metrics
         run: |
