@@ -1,0 +1,6 @@
+artifact_location: file:///C:/Users/wharhouri/Downloads/mlops-mlflow-tp/mlruns/349658721039324484
+creation_time: 1767715686742
+experiment_id: '349658721039324484'
+last_update_time: 1767715686742
+lifecycle_stage: active
+name: customer_churn_random_forest

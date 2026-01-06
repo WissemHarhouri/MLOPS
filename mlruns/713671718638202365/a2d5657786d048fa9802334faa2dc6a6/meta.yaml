@@ -1,0 +1,14 @@
+artifact_uri: file:///C:/Users/wharhouri/Downloads/mlops-mlflow-tp/mlruns/713671718638202365/a2d5657786d048fa9802334faa2dc6a6/artifacts
+end_time: 1767715680338
+entry_point_name: ''
+experiment_id: '713671718638202365'
+lifecycle_stage: active
+run_id: a2d5657786d048fa9802334faa2dc6a6
+run_name: random_forest_20260106_170755
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1767715676787
+status: 4
+tags: []
+user_id: wharhouri

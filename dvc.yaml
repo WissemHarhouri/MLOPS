@@ -1,8 +1,55 @@
 stages:
-  train:
-    cmd: python train.py
+  # Stage 1: Data Generation
+  generate_data:
+    cmd: python generate_data.py --dataset all
     deps:
-    - data/iris_data.csv
-    - train.py
+      - generate_data.py
     outs:
-    - model.pkl
+      - data/housing_data.csv
+      - data/credit_data.csv
+      - data/churn_data.csv
+
+  # Stage 2: Train California Housing Model
+  train_housing:
+    cmd: python train.py --dataset california_housing --model random_forest
+    deps:
+      - data/housing_data.csv
+      - train.py
+    metrics:
+      - metrics/metrics_california_housing_random_forest.json:
+          cache: false
+    plots:
+      - plots/housing_metrics.csv:
+          x: epoch
+          y: rmse
+
+  # Stage 3: Train Credit Fraud Model
+  train_credit:
+    cmd: python train.py --dataset credit_fraud --model random_forest
+    deps:
+      - data/credit_data.csv
+      - train.py
+    metrics:
+      - metrics/metrics_credit_fraud_random_forest.json:
+          cache: false
+
+  # Stage 4: Train Customer Churn Model
+  train_churn:
+    cmd: python train.py --dataset customer_churn --model random_forest
+    deps:
+      - data/churn_data.csv
+      - train.py
+    metrics:
+      - metrics/metrics_customer_churn_random_forest.json:
+          cache: false
+
+  # Stage 5: Compare Results
+  compare_results:
+    cmd: python compare_results.py
+    deps:
+      - metrics/metrics_california_housing_random_forest.json
+      - metrics/metrics_credit_fraud_random_forest.json
+      - metrics/metrics_customer_churn_random_forest.json
+      - compare_results.py
+    outs:
+      - reports/comparison_report.html

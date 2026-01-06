@@ -1,0 +1,6 @@
+artifact_location: file:///C:/Users/wharhouri/Downloads/mlops-mlflow-tp/mlruns/713671718638202365
+creation_time: 1767715675443
+experiment_id: '713671718638202365'
+last_update_time: 1767715675443
+lifecycle_stage: active
+name: credit_fraud_random_forest

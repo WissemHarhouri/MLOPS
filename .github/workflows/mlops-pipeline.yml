@@ -1,0 +1,358 @@
+name: MLOps Pipeline - CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+    paths:
+      - 'data/**'
+      - 'train.py'
+      - 'generate_data.py'
+      - 'requirements.txt'
+      - 'dvc.yaml'
+      - '.github/workflows/**'
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+  schedule:
+    # Run weekly on Monday at 00:00 UTC
+    - cron: '0 0 * * 1'
+
+env:
+  PYTHON_VERSION: '3.9'
+  
+jobs:
+  # Job 1: Code Quality and Linting
+  code-quality:
+    name: Code Quality Check
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install linting tools
+      run: |
+        python -m pip install --upgrade pip
+        pip install flake8 black pylint
+        
+    - name: Run Flake8
+      run: |
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+      continue-on-error: true
+      
+    - name: Check code formatting with Black
+      run: black --check .
+      continue-on-error: true
+
+  # Job 2: Unit Tests
+  tests:
+    name: Run Unit Tests
+    runs-on: ubuntu-latest
+    needs: code-quality
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Cache dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+          
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+        
+    - name: Run tests with coverage
+      run: |
+        pytest tests/ --cov=. --cov-report=xml --cov-report=html
+      continue-on-error: true
+      
+    - name: Upload coverage reports
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+      continue-on-error: true
+
+  # Job 3: Data Validation and Generation
+  data-pipeline:
+    name: Data Pipeline
+    runs-on: ubuntu-latest
+    needs: tests
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      with:
+        fetch-depth: 0
+        
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Set up DVC
+      run: |
+        pip install dvc[all]
+        
+    - name: Generate datasets
+      run: |
+        python generate_data.py --dataset all
+        
+    - name: Validate data
+      run: |
+        python -c "
+        import pandas as pd
+        import os
+        
+        datasets = ['housing_data.csv', 'credit_data.csv', 'churn_data.csv']
+        for ds in datasets:
+            path = f'data/{ds}'
+            assert os.path.exists(path), f'{ds} not found'
+            df = pd.read_csv(path)
+            assert len(df) > 0, f'{ds} is empty'
+            print(f'✓ {ds}: {len(df)} rows, {len(df.columns)} columns')
+        "
+        
+    - name: Upload datasets as artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: datasets
+        path: data/*.csv
+        retention-days: 30
+
+  # Job 4: Model Training - California Housing
+  train-housing:
+    name: Train Housing Model
+    runs-on: ubuntu-latest
+    needs: data-pipeline
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Download datasets
+      uses: actions/download-artifact@v3
+      with:
+        name: datasets
+        path: data/
+        
+    - name: Train model
+      run: |
+        python train.py --dataset california_housing --model random_forest
+        
+    - name: Upload MLflow artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: mlflow-housing
+        path: mlruns/
+        retention-days: 90
+        
+    - name: Upload metrics
+      uses: actions/upload-artifact@v3
+      with:
+        name: metrics-housing
+        path: metrics/metrics_california_housing_*.json
+
+  # Job 5: Model Training - Credit Fraud
+  train-credit:
+    name: Train Credit Fraud Model
+    runs-on: ubuntu-latest
+    needs: data-pipeline
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Download datasets
+      uses: actions/download-artifact@v3
+      with:
+        name: datasets
+        path: data/
+        
+    - name: Train model
+      run: |
+        python train.py --dataset credit_fraud --model random_forest
+        
+    - name: Upload metrics
+      uses: actions/upload-artifact@v3
+      with:
+        name: metrics-credit
+        path: metrics/metrics_credit_fraud_*.json
+
+  # Job 6: Model Training - Customer Churn
+  train-churn:
+    name: Train Churn Model
+    runs-on: ubuntu-latest
+    needs: data-pipeline
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Download datasets
+      uses: actions/download-artifact@v3
+      with:
+        name: datasets
+        path: data/
+        
+    - name: Train model
+      run: |
+        python train.py --dataset customer_churn --model random_forest
+        
+    - name: Upload metrics
+      uses: actions/upload-artifact@v3
+      with:
+        name: metrics-churn
+        path: metrics/metrics_customer_churn_*.json
+
+  # Job 7: Model Evaluation and Comparison
+  evaluate-models:
+    name: Evaluate and Compare Models
+    runs-on: ubuntu-latest
+    needs: [train-housing, train-credit, train-churn]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ env.PYTHON_VERSION }}
+        
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        
+    - name: Download all metrics
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts/
+        
+    - name: Copy metrics to metrics folder
+      run: |
+        mkdir -p metrics
+        find artifacts/ -name "metrics_*.json" -exec cp {} metrics/ \;
+        
+    - name: Compare results
+      run: |
+        python compare_results.py
+      continue-on-error: true
+        
+    - name: Upload comparison report
+      uses: actions/upload-artifact@v3
+      with:
+        name: comparison-report
+        path: reports/
+        retention-days: 90
+
+  # Job 8: Model Validation
+  validate-models:
+    name: Validate Model Performance
+    runs-on: ubuntu-latest
+    needs: evaluate-models
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+      
+    - name: Download metrics
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts/
+        
+    - name: Validate metrics thresholds
+      run: |
+        python -c "
+        import json
+        import os
+        import glob
+        
+        # Define thresholds
+        thresholds = {
+            'california_housing': {'test_r2': 0.5},
+            'credit_fraud': {'test_f1': 0.3},
+            'customer_churn': {'test_accuracy': 0.6}
+        }
+        
+        # Check all metrics
+        for pattern in glob.glob('artifacts/metrics-*/metrics_*.json'):
+            with open(pattern) as f:
+                metrics = json.load(f)
+            
+            dataset = pattern.split('_')[1]
+            if dataset in thresholds:
+                for metric, threshold in thresholds[dataset].items():
+                    if metric in metrics:
+                        value = metrics[metric]
+                        status = '✓' if value >= threshold else '✗'
+                        print(f'{status} {dataset} - {metric}: {value:.4f} (threshold: {threshold})')
+        "
+
+  # Job 9: Deploy notification
+  notify:
+    name: Deployment Notification
+    runs-on: ubuntu-latest
+    needs: validate-models
+    if: always()
+    
+    steps:
+    - name: Pipeline Status
+      run: |
+        echo "Pipeline completed!"
+        echo "Status: ${{ job.status }}"
