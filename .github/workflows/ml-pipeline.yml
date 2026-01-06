@@ -81,13 +81,13 @@ jobs:
       - name: Generate all datasets
         run: |
           echo "Generating California Housing dataset..."
-          python generate_data.py --dataset housing
+          python generate_data.py --dataset california_housing
           
           echo "Generating Credit Card Fraud dataset..."
-          python generate_data.py --dataset credit
+          python generate_data.py --dataset credit_fraud
           
           echo "Generating Customer Churn dataset..."
-          python generate_data.py --dataset churn
+          python generate_data.py --dataset customer_churn
       
       - name: Verify datasets
         run: |
